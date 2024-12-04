@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>SSE Demo</title>
+    <style>
+        #events {
+            margin: 20px;
+            padding: 20px;
+            border: 1px solid #ccc;
+            height: 300px;
+            overflow-y: auto;
+        }
+
+        .event {
+            margin: 5px 0;
+            padding: 5px;
+            background-color: #f0f0f0;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Server-Sent Events Demo</h1>
+    <div id="events"></div>
+
+    <script>
+        const eventsDiv = document.getElementById('events');
+
+        // Create EventSource instance
+        const eventSource = new EventSource('/events');
+
+        // Handle incoming messages
+        eventSource.onmessage = function (event) {
+            const newEvent = document.createElement('div');
+            newEvent.className = 'event';
+            newEvent.textContent = event.data;
+            eventsDiv.appendChild(newEvent);
+
+            // Auto-scroll to bottom
+            eventsDiv.scrollTop = eventsDiv.scrollHeight;
+        };
+
+        // Handle errors
+        eventSource.onerror = function (error) {
+            console.error('EventSource failed:', error);
+            const errorEvent = document.createElement('div');
+            errorEvent.className = 'event error';
+            errorEvent.textContent = 'Connection lost. Reconnecting...';
+            eventsDiv.appendChild(errorEvent);
+        };
+    </script>
+</body>
+
+</html>
