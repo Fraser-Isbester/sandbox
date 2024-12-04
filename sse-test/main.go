@@ -1,71 +1,166 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
+	"sync"
 	"time"
 )
 
-func sseHandler(w http.ResponseWriter, r *http.Request) {
+type Client struct {
+	ID        string
+	Channel   chan []byte
+	LastSeen  time.Time
+	UserAgent string
+}
 
-	// Set headers for SSE
+type SSEServer struct {
+	clients sync.Map
+	stats   struct {
+		connections int
+		messages    int
+	}
+}
+
+func NewSSEServer() *SSEServer {
+	server := &SSEServer{}
+
+	// Cleanup routine - remove stale connections
+	go func() {
+		for {
+			now := time.Now()
+			server.clients.Range(func(key, value interface{}) bool {
+				client := value.(*Client)
+				if now.Sub(client.LastSeen) > 30*time.Second {
+					server.clients.Delete(key)
+					close(client.Channel)
+				}
+				return true
+			})
+			time.Sleep(10 * time.Second)
+		}
+	}()
+
+	return server
+}
+
+func (s *SSEServer) handleSSE(w http.ResponseWriter, r *http.Request) {
+	// SSE headers
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 
-	// Create channel for client disconnect detection
+	// Create client
+	client := &Client{
+		ID:        r.RemoteAddr,
+		Channel:   make(chan []byte, 10),
+		LastSeen:  time.Now(),
+		UserAgent: r.UserAgent(),
+	}
+	s.clients.Store(client.ID, client)
+
+	// Cleanup on disconnect
 	notify := r.Context().Done()
 	go func() {
 		<-notify
-		log.Println("Client disconnected")
+		s.clients.Delete(client.ID)
+		close(client.Channel)
 	}()
 
-	// Send events every 2 seconds
-	messageChan := make(chan string)
-	go func() {
-		id := 1
-		for {
-			// Simulate some event data
-			message := fmt.Sprintf("id: %d\ndata: Server time is %s\n\n",
-				id,
-				time.Now().Format(time.RFC3339))
-			messageChan <- message
-			id++
-			time.Sleep(2 * time.Second)
-		}
-	}()
-
-	// Write events to response
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		http.Error(w, "SSE not supported", http.StatusInternalServerError)
 		return
 	}
 
+	// Send initial retry timeout (15 seconds)
+	fmt.Fprintf(w, "retry: 15000\n\n")
+	flusher.Flush()
+
+	// Keep-alive ticker
+	keepAliveTicker := time.NewTicker(15 * time.Second)
+	defer keepAliveTicker.Stop()
+
 	for {
 		select {
 		case <-notify:
 			return
-		case msg := <-messageChan:
-			fmt.Fprint(w, msg)
+		case msg := <-client.Channel:
+			fmt.Fprintf(w, "data: %s\n\n", msg)
+			flusher.Flush()
+			client.LastSeen = time.Now()
+		case <-keepAliveTicker.C:
+			// Send comment as keepalive
+			fmt.Fprintf(w, ": keepalive %v\n\n", time.Now().Unix())
 			flusher.Flush()
 		}
 	}
 }
 
+func (s *SSEServer) broadcast(eventType string, data interface{}) {
+	payload, _ := json.Marshal(data)
+	s.clients.Range(func(key, value interface{}) bool {
+		client := value.(*Client)
+		select {
+		case client.Channel <- payload:
+		default:
+			// Channel full, client too slow
+			s.clients.Delete(key)
+			close(client.Channel)
+		}
+		return true
+	})
+}
+
 func main() {
-	// Serve the HTML file
+	server := NewSSEServer()
+
+	// Send events every 2 seconds
+	go func() {
+		for {
+			time.Sleep(2 * time.Second)
+			server.broadcast("message", map[string]interface{}{
+				"time":    time.Now().Format(time.RFC3339),
+				"message": "Server time update",
+			})
+		}
+	}()
+
+	// Log client count every 5 seconds
+	go func() {
+		for {
+			time.Sleep(5 * time.Second)
+			count := 0
+			server.clients.Range(func(_, _ interface{}) bool {
+				count++
+				return true
+			})
+			fmt.Printf("Active clients: %d\n", count)
+		}
+	}()
+
+	// Serve client
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		http.ServeFile(w, r, "index.html")
 	})
 
 	// SSE endpoint
-	http.HandleFunc("/events", sseHandler)
+	http.HandleFunc("/events", server.handleSSE)
+
+	// Stats endpoint
+	http.HandleFunc("/stats", func(w http.ResponseWriter, r *http.Request) {
+		activeClients := 0
+		server.clients.Range(func(_, _ interface{}) bool {
+			activeClients++
+			return true
+		})
+		json.NewEncoder(w).Encode(map[string]int{
+			"active_connections": activeClients,
+		})
+	})
 
 	fmt.Println("Server starting on :8080...")
-	if err := http.ListenAndServe(":8080", nil); err != nil {
-		log.Fatal(err)
-	}
+	http.ListenAndServe(":8080", nil)
 }
