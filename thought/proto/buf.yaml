@@ -1,0 +1,13 @@
+version: v2
+# name: github.com/fraser-isbester/sandbox/thought
+deps:
+  - buf.build/googleapis/googleapis
+breaking:
+  use:
+    - FILE
+lint:
+  use:
+    - STANDARD
+  except:
+    - PACKAGE_VERSION_SUFFIX
+    - SERVICE_SUFFIX
