@@ -27,7 +27,8 @@ const (
 
 // DiffProvider handles git repository operations
 type DiffProvider struct {
-	repo *git.Repository
+	repo     *git.Repository
+	repoPath string
 }
 
 func findGitRoot(path string) (string, error) {
@@ -50,32 +51,48 @@ func NewDiffProvider(path string) (*DiffProvider, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &DiffProvider{repo: r}, nil
+	return &DiffProvider{
+		repo:     r,
+		repoPath: rootPath,
+	}, nil
 }
 
 // GetCurrentDiff returns changes between HEAD and working directory
 func (dp *DiffProvider) GetCurrentDiff() ([]DiffEntry, error) {
-	w, err := dp.repo.Worktree()
+	// Get raw diff output
+	cmd := exec.Command("git", "diff")
+	cmd.Dir = dp.repoPath
+	out, err := cmd.Output()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get diff: %w", err)
 	}
 
-	status, err := w.Status()
-	if err != nil {
-		return nil, err
-	}
+	// Parse unified diff format
+	entries := []DiffEntry{}
+	files := strings.Split(string(out), "diff --git")
 
-	var entries []DiffEntry
-	for path, fileStatus := range status {
-		if fileStatus.Staging == git.Untracked {
+	for _, file := range files[1:] { // Skip first empty element
+		lines := strings.Split(file, "\n")
+		if len(lines) < 3 {
 			continue
 		}
 
-		entry := DiffEntry{
-			Path: path,
-			Type: determineChangeType(fileStatus.Staging),
+		// Extract filename from diff header
+		// Example: "a/path/file.go b/path/file.go"
+		pathLine := strings.Fields(lines[0])
+		if len(pathLine) < 2 {
+			continue
 		}
-		entries = append(entries, entry)
+		path := strings.TrimPrefix(pathLine[1], "b/")
+
+		// Collect actual diff content
+		content := strings.Join(lines[3:], "\n")
+
+		entries = append(entries, DiffEntry{
+			Path:    path,
+			Content: content,
+			Type:    Modify, // For now, simplify to always Modify
+		})
 	}
 
 	return entries, nil
