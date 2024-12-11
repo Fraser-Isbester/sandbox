@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -38,7 +39,9 @@ func main() {
 		log.Fatalf("Failed to review diffs: %v", err)
 	}
 
-	for _, review := range reviews {
-		fmt.Printf("%s:%d: %s\n\n", review.FilePath, review.LineNumber, review.Suggestion)
+	output, err := json.Marshal(reviews)
+	if err != nil {
+		log.Fatalf("Failed to marshal reviews: %v", err)
 	}
+	fmt.Println(string(output))
 }

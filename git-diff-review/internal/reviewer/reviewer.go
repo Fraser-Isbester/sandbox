@@ -2,34 +2,59 @@ package reviewer
 
 import (
 	"context"
+	"encoding/json"
 	"regexp"
 
 	"github.com/fraser-isbester/sandbox/git-diff-review/internal/git"
-	"github.com/fraser-isbester/sandbox/git-diff-review/internal/llm"
+	"github.com/tmc/langchaingo/llms/anthropic"
+	"github.com/tmc/langchaingo/prompts"
 )
 
-// Review represents a code review result
-type Review struct {
-	FilePath   string
-	LineNumber int
-	Suggestion string
-	Severity   string
+type ReviewComment struct {
+	Type       string `json:"type"`     // "suggestion", "issue", "praise"
+	Severity   string `json:"severity"` // "critical", "warning", "info"
+	Line       int    `json:"line"`
+	Message    string `json:"message"`
+	Suggestion string `json:"suggestion,omitempty"`
+}
+
+type ReviewResponse struct {
+	File     string          `json:"file"`
+	Comments []ReviewComment `json:"comments"`
+	Summary  string          `json:"summary"`
 }
 
 type Reviewer struct {
-	llmClient *llm.Client
+	llm *anthropic.LLM
 }
 
+const reviewTemplate = `Review the following code diff:
+
+{{.diff}}
+
+Respond only with JSON matching this format:
+{
+  "comments": [
+    {
+      "type": "suggestion|issue|praise",
+      "severity": "critical|warning|info",
+      "line": <integer>,
+      "message": <string>,
+      "suggestion": <string>
+    }
+  ],
+  "summary": <string>
+}`
+
 func NewReviewer() (*Reviewer, error) {
-	client, err := llm.NewClient()
+	client, err := anthropic.New()
 	if err != nil {
 		return nil, err
 	}
-	return &Reviewer{llmClient: client}, nil
+	return &Reviewer{llm: client}, nil
 }
 
 func shouldReviewFile(path string) bool {
-	// Manually skip some files
 	skipPatterns := []string{
 		"go.mod$",
 		"go.sum$",
@@ -46,22 +71,33 @@ func shouldReviewFile(path string) bool {
 	return true
 }
 
-func (r *Reviewer) ReviewDiffs(ctx context.Context, diffs []git.DiffEntry) ([]Review, error) {
-	var reviews []Review
+func (r *Reviewer) ReviewDiffs(ctx context.Context, diffs []git.DiffEntry) ([]ReviewResponse, error) {
+	var responses []ReviewResponse
+	prompt := prompts.NewPromptTemplate(reviewTemplate, []string{"diff"})
+
 	for _, diff := range diffs {
 		if !shouldReviewFile(diff.Path) {
 			continue
 		}
-		feedback, err := r.llmClient.Review(ctx, diff.Content)
+
+		promptStr, err := prompt.Format(map[string]any{
+			"diff": diff.Content,
+		})
 		if err != nil {
 			return nil, err
 		}
-		reviews = append(reviews, Review{
-			FilePath:   diff.Path,
-			LineNumber: diff.LineNum,
-			Suggestion: feedback,
-			Severity:   "info",
-		})
+
+		result, err := r.llm.Call(ctx, promptStr)
+		if err != nil {
+			return nil, err
+		}
+
+		var response ReviewResponse
+		if err := json.Unmarshal([]byte(result), &response); err != nil {
+			return nil, err
+		}
+		response.File = diff.Path
+		responses = append(responses, response)
 	}
-	return reviews, nil
+	return responses, nil
 }

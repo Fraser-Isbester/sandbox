@@ -97,14 +97,3 @@ func (dp *DiffProvider) GetCurrentDiff() ([]DiffEntry, error) {
 
 	return entries, nil
 }
-
-func determineChangeType(status git.StatusCode) ChangeType {
-	switch status {
-	case git.Added:
-		return Add
-	case git.Deleted:
-		return Delete
-	default:
-		return Modify
-	}
-}
