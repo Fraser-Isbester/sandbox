@@ -1,30 +1,93 @@
 package git
 
 import (
-	"bytes"
+	"fmt"
 	"os/exec"
+	"strings"
+
+	"github.com/go-git/go-git/v5"
 )
 
-// DiffProvider interfaces with git to get repository diffs
+// DiffEntry represents a single change in a diff
+type DiffEntry struct {
+	Path    string
+	Content string
+	LineNum int
+	Type    ChangeType
+}
+
+// ChangeType represents the type of change in a diff
+type ChangeType int
+
+const (
+	Add ChangeType = iota
+	Delete
+	Modify
+)
+
+// DiffProvider handles git repository operations
 type DiffProvider struct {
-	repoPath string
+	repo *git.Repository
 }
 
-// NewDiffProvider creates a new DiffProvider for the given repo path
-func NewDiffProvider(repoPath string) *DiffProvider {
-	return &DiffProvider{
-		repoPath: repoPath,
+func findGitRoot(path string) (string, error) {
+	cmd := exec.Command("git", "-C", path, "rev-parse", "--show-toplevel")
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("not in a git repository: %w", err)
 	}
+	return strings.TrimSpace(string(out)), nil
 }
 
-// GetCurrentDiff returns the current diff against the default branch
-func (dp *DiffProvider) GetCurrentDiff() ([]byte, error) {
-	cmd := exec.Command("git", "-C", dp.repoPath, "diff")
-	var out bytes.Buffer
-	cmd.Stdout = &out
-	err := cmd.Run()
+// NewDiffProvider creates a DiffProvider for the given path
+func NewDiffProvider(path string) (*DiffProvider, error) {
+	rootPath, err := findGitRoot(path)
 	if err != nil {
 		return nil, err
 	}
-	return out.Bytes(), nil
+
+	r, err := git.PlainOpen(rootPath)
+	if err != nil {
+		return nil, err
+	}
+	return &DiffProvider{repo: r}, nil
+}
+
+// GetCurrentDiff returns changes between HEAD and working directory
+func (dp *DiffProvider) GetCurrentDiff() ([]DiffEntry, error) {
+	w, err := dp.repo.Worktree()
+	if err != nil {
+		return nil, err
+	}
+
+	status, err := w.Status()
+	if err != nil {
+		return nil, err
+	}
+
+	var entries []DiffEntry
+	for path, fileStatus := range status {
+		if fileStatus.Staging == git.Untracked {
+			continue
+		}
+
+		entry := DiffEntry{
+			Path: path,
+			Type: determineChangeType(fileStatus.Staging),
+		}
+		entries = append(entries, entry)
+	}
+
+	return entries, nil
+}
+
+func determineChangeType(status git.StatusCode) ChangeType {
+	switch status {
+	case git.Added:
+		return Add
+	case git.Deleted:
+		return Delete
+	default:
+		return Modify
+	}
 }
