@@ -2,10 +2,10 @@ package main
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
+	"flag"
 	"os"
 
+	"github.com/fraser-isbester/sandbox/git-diff-review/internal/format"
 	"github.com/fraser-isbester/sandbox/git-diff-review/internal/git"
 	"github.com/fraser-isbester/sandbox/git-diff-review/internal/log"
 	"github.com/fraser-isbester/sandbox/git-diff-review/internal/reviewer"
@@ -13,11 +13,10 @@ import (
 
 func main() {
 	ctx := context.Background()
-
-	log.WriterInstance.StartSpinner()
-	defer log.WriterInstance.StopSpinner()
-
 	log.Logger.Info().Msg("Starting git-diff-review")
+
+	outputFormat := flag.String("format", "json", "output format (json, pretty)")
+	flag.Parse()
 
 	repoPath, err := os.Getwd()
 	if err != nil {
@@ -34,7 +33,7 @@ func main() {
 		log.Logger.Fatal().Err(err).Msg("Failed to get diff")
 	}
 
-	reviewer, err := reviewer.NewReviewer(reviewer.Config{Provider: reviewer.AnthropicProvider})
+	reviewer, err := reviewer.NewReviewer(reviewer.Config{Provider: reviewer.OpenAIProvider})
 	if err != nil {
 		log.Logger.Fatal().Err(err).Msg("Failed to initialize reviewer")
 	}
@@ -44,9 +43,20 @@ func main() {
 		log.Logger.Fatal().Err(err).Msg("Failed to review diffs")
 	}
 
-	output, err := json.Marshal(reviews)
-	if err != nil {
-		log.Logger.Fatal().Err(err).Msg("Failed to marshal reviews")
+	formatter := createFormatter(*outputFormat)
+	if err := formatter.Format(reviews, os.Stdout); err != nil {
+		log.Logger.Fatal().Err(err).Msg("Failed to format output")
 	}
-	fmt.Println(string(output))
+}
+
+func createFormatter(formatFlag string) format.Formatter {
+	switch formatFlag {
+	case "pretty":
+		return format.NewPrettyFormatter()
+	case "json":
+		return format.NewJSONFormatter()
+	default:
+		log.Logger.Fatal().Msgf("Unsupported format: %s", formatFlag)
+		return nil
+	}
 }

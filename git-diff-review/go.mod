@@ -3,10 +3,11 @@ module github.com/fraser-isbester/sandbox/git-diff-review
 go 1.23.4
 
 require (
+	github.com/fatih/color v1.17.0
 	github.com/go-git/go-git/v5 v5.12.0
 	github.com/onsi/ginkgo/v2 v2.20.1
 	github.com/onsi/gomega v1.36.1
-	github.com/rs/zerolog v1.33.0
+	github.com/rs/zerolog v1.31.0
 	github.com/tmc/langchaingo v0.1.12
 	github.com/tmc/spinner v0.1.4
 )
@@ -29,7 +30,7 @@ require (
 	github.com/ProtonMail/go-crypto v1.0.0 // indirect
 	github.com/cloudflare/circl v1.3.7 // indirect
 	github.com/cyphar/filepath-securejoin v0.2.4 // indirect
-	github.com/dlclark/regexp2 v1.10.0 // indirect
+	github.com/dlclark/regexp2 v1.11.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/emirpasic/gods v1.18.1 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
