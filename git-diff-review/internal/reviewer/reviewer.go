@@ -25,10 +25,15 @@ type ReviewResponse struct {
 }
 
 type Reviewer struct {
-	llm *anthropic.LLM
+	llm            *anthropic.LLM
+	reviewTemplate string
 }
 
-const reviewTemplate = `Review the following code diff:
+type Config struct {
+	ReviewTemplate string
+}
+
+const defaultReviewTemplate = `Review the following code diff:
 
 {{.diff}}
 
@@ -38,20 +43,38 @@ Respond only with JSON matching this format:
     {
       "type": "suggestion|issue|praise",
       "severity": "critical|warning|info",
-      "line": <integer>,
+      "lineStart": <integer>,
+	  "lineEnd": <integer>,
       "message": <string>,
-      "suggestion": <string>
+      "suggestion": "<raw code suggestion only>"
     }
   ],
-  "summary": <string>
-}`
+  "summary": "<one sentence summary>"
+}
 
-func NewReviewer() (*Reviewer, error) {
+Rules:
+1. Ensure the "suggestion" field contains only the raw code, with no additional text or context.
+2. Every comment must reference exact line numbers from the diff
+3. Messages must be specific to the code, never generic advice
+4. Every issue must have an actionable suggestion
+5. Performance comments must include expected impact
+6. Security comments must explain the risk
+7. No meta-commentary or summary text
+8. Limit to 3-5 most important issues
+9. Skip style issues unless they impact maintainability`
+
+func NewReviewer(cfg Config) (*Reviewer, error) {
 	client, err := anthropic.New()
 	if err != nil {
 		return nil, err
 	}
-	return &Reviewer{llm: client}, nil
+
+	if cfg.ReviewTemplate == "" {
+		cfg.ReviewTemplate = defaultReviewTemplate
+	}
+	return &Reviewer{
+		llm:            client,
+		reviewTemplate: cfg.ReviewTemplate}, nil
 }
 
 func shouldReviewFile(path string) bool {
@@ -73,7 +96,7 @@ func shouldReviewFile(path string) bool {
 
 func (r *Reviewer) ReviewDiffs(ctx context.Context, diffs []git.DiffEntry) ([]ReviewResponse, error) {
 	var responses []ReviewResponse
-	prompt := prompts.NewPromptTemplate(reviewTemplate, []string{"diff"})
+	prompt := prompts.NewPromptTemplate(r.reviewTemplate, []string{"diff"})
 
 	for _, diff := range diffs {
 		if !shouldReviewFile(diff.Path) {
