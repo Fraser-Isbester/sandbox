@@ -4,44 +4,49 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"os"
 
 	"github.com/fraser-isbester/sandbox/git-diff-review/internal/git"
+	"github.com/fraser-isbester/sandbox/git-diff-review/internal/log"
 	"github.com/fraser-isbester/sandbox/git-diff-review/internal/reviewer"
 )
 
 func main() {
 	ctx := context.Background()
 
+	log.WriterInstance.StartSpinner()
+	defer log.WriterInstance.StopSpinner()
+
+	log.Logger.Info().Msg("Starting git-diff-review")
+
 	repoPath, err := os.Getwd()
 	if err != nil {
-		log.Fatalf("Failed to get working directory: %v", err)
+		log.Logger.Fatal().Err(err).Msg("Failed to get working directory")
 	}
 
 	diffProvider, err := git.NewDiffProvider(repoPath)
 	if err != nil {
-		log.Fatalf("Failed to initialize diff provider: %v", err)
+		log.Logger.Fatal().Err(err).Msg("Failed to initialize diff provider")
 	}
 
 	diffs, err := diffProvider.GetCurrentDiff()
 	if err != nil {
-		log.Fatalf("Failed to get diff: %v", err)
+		log.Logger.Fatal().Err(err).Msg("Failed to get diff")
 	}
 
-	reviewer, err := reviewer.NewReviewer(reviewer.Config{Provider: reviewer.OpenAIProvider})
+	reviewer, err := reviewer.NewReviewer(reviewer.Config{Provider: reviewer.AnthropicProvider})
 	if err != nil {
-		log.Fatalf("Failed to initialize reviewer: %v", err)
+		log.Logger.Fatal().Err(err).Msg("Failed to initialize reviewer")
 	}
 
 	reviews, err := reviewer.ReviewDiffs(ctx, diffs)
 	if err != nil {
-		log.Fatalf("Failed to review diffs: %v", err)
+		log.Logger.Fatal().Err(err).Msg("Failed to review diffs")
 	}
 
 	output, err := json.Marshal(reviews)
 	if err != nil {
-		log.Fatalf("Failed to marshal reviews: %v", err)
+		log.Logger.Fatal().Err(err).Msg("Failed to marshal reviews")
 	}
 	fmt.Println(string(output))
 }
