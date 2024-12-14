@@ -20,7 +20,7 @@ type PrettyFormatter struct {
 	typeColor *color.Color
 }
 
-func NewPrettyFormatter() *PrettyFormatter {
+func newPrettyFormatter() *PrettyFormatter {
 	return &PrettyFormatter{
 		fileColor: color.New(color.FgCyan),
 		typeColor: color.New(color.FgGreen),
@@ -57,7 +57,7 @@ func (p *PrettyFormatter) Format(reviews []reviewer.ReviewResponse, writer io.Wr
 
 type JSONFormatter struct{}
 
-func NewJSONFormatter() *JSONFormatter {
+func newJSONFormatter() *JSONFormatter {
 	return &JSONFormatter{}
 }
 
@@ -68,4 +68,18 @@ func (j *JSONFormatter) Format(reviews []reviewer.ReviewResponse, writer io.Writ
 	}
 	_, err = fmt.Fprintln(writer, string(output))
 	return err
+}
+
+func NewFormatter(formatFlag string) Formatter {
+	switch formatFlag {
+	case "pretty":
+		return newPrettyFormatter()
+	case "json":
+		return newJSONFormatter()
+	case "github":
+		return newGitHubFormatter()
+	default:
+		// log.Logger().Fatal().Msgf("Unsupported format: %s", formatFlag)
+		return nil
+	}
 }

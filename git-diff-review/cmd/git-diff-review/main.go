@@ -18,6 +18,10 @@ func main() {
 	outputFormat := flag.String("format", "json", "output format (json, pretty)")
 	flag.Parse()
 
+	if *outputFormat == "github" && os.Getenv("GITHUB_ACTIONS") != "true" {
+		log.Logger.Warn().Msg("GitHub format selected but not running in GitHub Actions environment")
+	}
+
 	repoPath, err := os.Getwd()
 	if err != nil {
 		log.Logger.Fatal().Err(err).Msg("Failed to get working directory")
@@ -43,20 +47,8 @@ func main() {
 		log.Logger.Fatal().Err(err).Msg("Failed to review diffs")
 	}
 
-	formatter := createFormatter(*outputFormat)
+	formatter := format.NewFormatter(*outputFormat)
 	if err := formatter.Format(reviews, os.Stdout); err != nil {
 		log.Logger.Fatal().Err(err).Msg("Failed to format output")
-	}
-}
-
-func createFormatter(formatFlag string) format.Formatter {
-	switch formatFlag {
-	case "pretty":
-		return format.NewPrettyFormatter()
-	case "json":
-		return format.NewJSONFormatter()
-	default:
-		log.Logger.Fatal().Msgf("Unsupported format: %s", formatFlag)
-		return nil
 	}
 }
