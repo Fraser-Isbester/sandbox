@@ -18,7 +18,7 @@ var _ = Describe("Reviewer", func() {
 	BeforeEach(func() {
 		ctx = context.Background()
 		var err error
-		r, err = reviewer.NewReviewer(reviewer.Config{})
+		r, err = reviewer.NewReviewer(reviewer.Config{Provider: reviewer.AnthropicProvider})
 		Expect(err).NotTo(HaveOccurred())
 	})
 

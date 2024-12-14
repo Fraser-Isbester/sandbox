@@ -29,7 +29,7 @@ func main() {
 		log.Fatalf("Failed to get diff: %v", err)
 	}
 
-	reviewer, err := reviewer.NewReviewer(reviewer.Config{})
+	reviewer, err := reviewer.NewReviewer(reviewer.Config{Provider: reviewer.OpenAIProvider})
 	if err != nil {
 		log.Fatalf("Failed to initialize reviewer: %v", err)
 	}
