@@ -1,0 +1,31 @@
+version: v2
+# Cleanup generated files before generation
+clean: true
+
+# Managed mode configuration
+managed:
+  enabled: true
+  # Optional: disable specific managed behaviors if needed
+  # disable:
+  #   - module: buf.build/googleapis/googleapis
+
+# Plugins for code generation
+plugins:
+  # Go protobuf types generation
+  - remote: buf.build/protocolbuffers/go
+    out: ../gen
+    opt:
+      - paths=source_relative
+
+  # Connect RPC Go server and client generation
+  - remote: buf.build/connectrpc/go
+    out: ../gen
+    opt:
+      - paths=source_relative
+
+# Inputs for generation
+inputs:
+  - directory: .
+    # Specify exact paths to proto files if needed
+    paths:
+      - chat/v1

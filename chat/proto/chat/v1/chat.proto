@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package chat.v1;
+
+option go_package = "github.com/fraser-isbester/sandbox/chat/gen/chat/v1;chatv1";
+
+service ChatService {
+  rpc Chat(stream ChatRequest) returns (stream ChatResponse) {}
+}
+
+message ChatRequest {
+  string message = 1;
+}
+
+message ChatResponse {
+  string message = 1;
+}
