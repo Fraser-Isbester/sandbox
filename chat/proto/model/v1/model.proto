@@ -1,0 +1,30 @@
+syntax = "proto3";
+
+package model.v1;
+
+option go_package = "github.com/fraser-isbester/sandbox/chat/gen/model/v1;modelv1";
+
+service ModelService {
+    rpc ListModels(ListModelsRequest) returns (ListModelsResponse) {}
+}
+
+// List All Models
+message ListModelsRequest {}
+
+// List of models response.
+message ListModelsResponse {
+    // List of models.
+    repeated Model models = 1;
+}
+
+// Basic Model representation.
+message Model {
+    // Model name
+    string name = 1;
+
+    // Model description
+    string description = 2;
+
+    // Model provider
+    string provider = 3;
+}
