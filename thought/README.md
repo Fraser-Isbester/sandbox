@@ -1,3 +1,5 @@
+<!-- summary: Thinking about thinking. -->
+
 # Thought
 Thought is for watching/exploring how machines (or not machines) think and implementing a simple interface for changing that behvaiour.
 
