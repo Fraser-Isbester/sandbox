@@ -8,9 +8,15 @@ class Conversation:
 
     def __init__(self, data_dir: str):
         self.data_dir = Path(data_dir)
+        self._create_dir()
+
         self.id = str(uuid.uuid4())
         self.path = data_dir / Path(f"conv-{self.id}.ndjson")
         self.messages: list[Message] = []
+
+
+    def _create_dir(self):
+        self.data_dir.mkdir(parents=True, exist_ok=True)
 
     def append(self, msg):
         self.messages.append(msg)
@@ -37,4 +43,5 @@ class Conversation:
         with path.open("r") as f:
             for line in f.readlines():
                 msg = Message.model_validate_json(line)
-                self.append(msg)
+                # Append without writing to disk
+                self.messages.append(msg)

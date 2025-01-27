@@ -18,6 +18,6 @@ def chat(message: Message, client: Client) -> Message:
     )
 
     content = response.content[0].text
-    response = Message(content=content, role=Role.assistant)
+    response = Message(conversation=conv.id, content=content, role=Role.assistant)
     conv.append(response)
     return response, None
