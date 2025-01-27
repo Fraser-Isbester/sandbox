@@ -1,11 +1,19 @@
 package chat
 
-import chatv1connect "github.com/fraser-isbester/sandbox/chat/gen/chat/v1/chatv1connect"
+import (
+	"github.com/anthropics/anthropic-sdk-go"
+	"github.com/fraser-isbester/sandbox/chat/internal/storage"
+)
 
 type Handler struct {
-	chatv1connect.UnimplementedChatServiceHandler
+	client *anthropic.Client
+	store  *storage.ConversationStore
 }
 
 func NewHandler() *Handler {
-	return &Handler{}
+	client := anthropic.NewClient()
+	return &Handler{
+		client: client,
+		store:  storage.NewConversationStore("./data"),
+	}
 }
