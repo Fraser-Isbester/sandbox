@@ -1,5 +1,6 @@
-from pathlib import Path
+import logging
 import uuid
+from pathlib import Path
 
 from chat.typ import Message
 
@@ -13,9 +14,9 @@ class Conversation:
 
     def append(self, msg):
         self.messages.append(msg)
-        with self.path.open("w") as f:
-            msg = self.messages[-1].model_dump_json()
-            f.writelines([msg])
+        with self.path.open("a+") as f:
+            msg = self.messages[-1].model_dump_json() + "\n"
+            f.write(msg)
 
     def get_messages(self):
         ordered_messages = sorted(self.messages, key=lambda msg: msg.timestamp, reverse=True)
@@ -23,9 +24,11 @@ class Conversation:
         return filtered
 
     def load(self, id):
-        path = self.data_dir / Path(f"conv-{self.id}.ndjson")
+        path = self.data_dir / Path(f"conv-{id}.ndjson")
         if not path.exists():
-            return FileNotFoundError(f"This conversation was not found: {id}")
+            err = FileNotFoundError(f"This conversation was not found: {id}")
+            logging.error(err)
+            return err
 
         # Update conversation
         self.id = id

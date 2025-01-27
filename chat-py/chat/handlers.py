@@ -1,5 +1,3 @@
-import logging
-
 from anthropic import Client
 
 from chat.typ import Message, Role
@@ -9,8 +7,7 @@ def chat(message: Message, client: Client) -> Message:
 
     conv = Conversation("./data")
     if message.conversation:
-        err = conv.load(message.conversation)
-        logging.error(err)
+        conv.load(message.conversation)
 
     conv.append(message)
 
@@ -22,4 +19,5 @@ def chat(message: Message, client: Client) -> Message:
 
     content = response.content[0].text
     response = Message(content=content, role=Role.assistant)
+    conv.append(response)
     return response, None
