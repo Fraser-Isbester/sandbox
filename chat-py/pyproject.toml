@@ -7,16 +7,13 @@ requires-python = ">=3.13"
 dependencies = ["anthropic>=0.45.0", "fastapi>=0.115.7", "uvicorn>=0.34.0"]
 
 [tool.ruff]
-# Enable pycodestyle, Pyflakes, isort, pylint
-select = ["E", "F", "I", "PL"]
-ignore = []
-
-# Same as Black
 line-length = 120
 indent-width = 4
-
-# Assume Python 3.13
 target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "PL"]
+ignore = []
 
 [tool.ruff.format]
 quote-style = "double"
@@ -24,10 +21,10 @@ indent-style = "space"
 skip-magic-trailing-comma = false
 line-ending = "auto"
 
-[tool.ruff.isort]
+[tool.ruff.lint.isort]
 combine-as-imports = true
 known-first-party = ["chat_py"]
 
-[tool.ruff.per-file-ignores]
+[tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"]
 "tests/*" = ["PLR2004"]

@@ -1,6 +1,8 @@
-from pydantic import BaseModel
-from enum import Enum
 from datetime import datetime, timezone
+from enum import Enum
+
+from pydantic import BaseModel
+
 
 class Role(str, Enum):
     user = "user"

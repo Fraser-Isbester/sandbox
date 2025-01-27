@@ -1,7 +1,8 @@
 from anthropic import Client
 
-from chat.typ import Message, Role
 from chat.storage import Conversation
+from chat.typ import Message, Role
+
 
 def chat(message: Message, client: Client) -> Message:
 

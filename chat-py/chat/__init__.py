@@ -1,9 +1,9 @@
-from fastapi import FastAPI, Depends, HTTPException
 import anthropic
+from fastapi import Depends, FastAPI, HTTPException
 
-from chat.typ import Message
 from chat import handlers
 from chat.llm import new_client
+from chat.typ import Message
 
 app = FastAPI()
 

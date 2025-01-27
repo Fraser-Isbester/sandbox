@@ -4,6 +4,7 @@ from pathlib import Path
 
 from chat.typ import Message
 
+
 class Conversation:
 
     def __init__(self, data_dir: str):
