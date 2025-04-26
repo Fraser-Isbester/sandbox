@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple Chat App</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            border-bottom: 1px solid #ccc;
+            padding-bottom: 10px;
+        }
+
+        .room-info {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .back-to-rooms {
+            padding: 5px 10px;
+            background-color: #f2f2f2;
+            border-radius: 4px;
+            text-decoration: none;
+            color: #333;
+            font-size: 14px;
+        }
+
+        .back-to-rooms:hover {
+            background-color: #e6e6e6;
+        }
+
+        .chat-container {
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            padding: 10px;
+            height: 400px;
+            overflow-y: auto;
+            margin-bottom: 20px;
+        }
+
+        .message {
+            margin-bottom: 10px;
+            padding: 8px 12px;
+            border-radius: 5px;
+        }
+
+        .message.user {
+            background-color: #e6f7ff;
+            text-align: right;
+        }
+
+        .message.other {
+            background-color: #f2f2f2;
+        }
+
+        .message-form {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .sender-row {
+            display: flex;
+            gap: 10px;
+        }
+
+        input,
+        textarea,
+        button {
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+
+        button {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+            padding: 10px 15px;
+        }
+
+        button:hover {
+            background-color: #45a049;
+        }
+
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+
+        textarea {
+            width: 100%;
+            resize: vertical;
+        }
+
+        .room-selector {
+            margin-left: 10px;
+        }
+
+        .connection-status {
+            font-size: 14px;
+            margin-bottom: 10px;
+            padding: 5px;
+            border-radius: 4px;
+            text-align: center;
+        }
+
+        .connection-status.connected {
+            background-color: #dff0d8;
+            color: #3c763d;
+        }
+
+        .connection-status.disconnected {
+            background-color: #f2dede;
+            color: #a94442;
+        }
+
+        .connection-status.connecting {
+            background-color: #fcf8e3;
+            color: #8a6d3b;
+        }
+    </style>
+</head>
+
+<body>
+    <header>
+        <div class="room-info">
+            <h1>{{ rooms|selectattr('id', 'equalto', room_id)|map(attribute='name')|first }}</h1>
+            <span class="room-selector">
+                <select onchange="window.location.href=this.value">
+                    <option value="">Switch Room</option>
+                    {% for room in rooms %}
+                    <option value="{{ url_for('room', room_id=room.id) }}" {% if room.id==room_id %}disabled{% endif %}>
+                        {{ room.name }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </span>
+        </div>
+        <a href="{{ url_for('index') }}" class="back-to-rooms">All Rooms</a>
+    </header>
+
+    <div id="connection-status" class="connection-status connecting">
+        Connecting to chat server...
+    </div>
+
+    <div class="chat-container" id="chat-container">
+        {% for message in messages %}
+        <div class="message {% if message.sender == 'User' %}user{% else %}other{% endif %}">
+            <strong>{{ message.sender }}:</strong> {{ message.content }}
+            <small>({{ message.timestamp }})</small>
+        </div>
+        {% endfor %}
+    </div>
+
+    <form class="message-form" id="message-form">
+        <div class="sender-row">
+            <input type="text" name="sender" id="sender-input" placeholder="Your name" value="User" required>
+            <button type="submit" id="send-button" disabled>Send</button>
+        </div>
+        <textarea name="content" id="content-input" placeholder="Type your message here..." rows="3"
+            required></textarea>
+    </form>
+
+    <script>
+        // Get current room ID from URL
+        const currentPath = window.location.pathname;
+        const roomId = currentPath.split('/').pop();
+
+        // Elements
+        const connectionStatus = document.getElementById('connection-status');
+        const chatContainer = document.getElementById('chat-container');
+        const messageForm = document.getElementById('message-form');
+        const senderInput = document.getElementById('sender-input');
+        const contentInput = document.getElementById('content-input');
+        const sendButton = document.getElementById('send-button');
+
+        // WebSocket connection
+        let socket = null;
+        let reconnectAttempts = 0;
+        const maxReconnectAttempts = 5;
+        const reconnectDelay = 3000; // 3 seconds
+
+        // Store user's name in session storage
+        if (sessionStorage.getItem('chat_username')) {
+            senderInput.value = sessionStorage.getItem('chat_username');
+        }
+        senderInput.addEventListener('change', function () {
+            sessionStorage.setItem('chat_username', this.value);
+        });
+
+        // Scroll to bottom of chat container
+        function scrollToBottom() {
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+        scrollToBottom();
+
+        // Connect to WebSocket
+        function connectWebSocket() {
+            // Get protocol (ws or wss) based on current protocol (http or https)
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const host = window.location.host;
+            const wsUrl = `${protocol}//${host}/ws/${roomId}`;
+
+            connectionStatus.className = 'connection-status connecting';
+            connectionStatus.textContent = 'Connecting to chat server...';
+            sendButton.disabled = true;
+
+            socket = new WebSocket(wsUrl);
+
+            socket.onopen = function () {
+                connectionStatus.className = 'connection-status connected';
+                connectionStatus.textContent = 'Connected to chat server';
+                sendButton.disabled = false;
+                reconnectAttempts = 0;
+            };
+
+            socket.onmessage = function (event) {
+                const message = JSON.parse(event.data);
+                addMessageToChat(message);
+            };
+
+            socket.onclose = function () {
+                connectionStatus.className = 'connection-status disconnected';
+                connectionStatus.textContent = 'Disconnected from chat server. Reconnecting...';
+                sendButton.disabled = true;
+
+                // Try to reconnect with increasing delay
+                reconnectAttempts++;
+                if (reconnectAttempts <= maxReconnectAttempts) {
+                    setTimeout(connectWebSocket, reconnectDelay * reconnectAttempts);
+                } else {
+                    connectionStatus.textContent = 'Could not connect to chat server. Please refresh the page.';
+                }
+            };
+
+            socket.onerror = function (error) {
+                console.error('WebSocket error:', error);
+            };
+        }
+
+        // Function to add a message to the chat interface
+        function addMessageToChat(message) {
+            const messageClass = message.sender === senderInput.value ? 'user' : 'other';
+            const messageElement = document.createElement('div');
+            messageElement.className = `message ${messageClass}`;
+            messageElement.innerHTML = `
+                <strong>${message.sender}:</strong> ${message.content}
+                <small>(${message.timestamp})</small>
+            `;
+
+            chatContainer.appendChild(messageElement);
+            scrollToBottom();
+        }
+
+        // Load initial messages when page loads
+        function loadInitialMessages() {
+            fetch(`/api/messages/${roomId}`)
+                .then(response => response.json())
+                .then(messages => {
+                    chatContainer.innerHTML = '';
+                    messages.forEach(message => {
+                        addMessageToChat(message);
+                    });
+                });
+        }
+
+        // Handle form submission to send messages via WebSocket
+        messageForm.addEventListener('submit', function (e) {
+            e.preventDefault();
+
+            const sender = senderInput.value;
+            const content = contentInput.value;
+
+            if (content.trim() === '') return;
+            if (!socket || socket.readyState !== WebSocket.OPEN) {
+                alert('Not connected to chat server');
+                return;
+            }
+
+            // Send message via WebSocket
+            const message = {
+                sender: sender,
+                content: content
+            };
+
+            socket.send(JSON.stringify(message));
+
+            // Clear textarea
+            contentInput.value = '';
+            contentInput.focus();
+        });
+
+        // Initialize the chat
+        loadInitialMessages();
+        connectWebSocket();
+
+        // Handle page visibility changes to reconnect if needed
+        document.addEventListener('visibilitychange', function () {
+            if (document.visibilityState === 'visible' && (!socket || socket.readyState !== WebSocket.OPEN)) {
+                connectWebSocket();
+            }
+        });
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple Chat App - Rooms</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        h1 {
+            border-bottom: 1px solid #ccc;
+            padding-bottom: 10px;
+        }
+
+        .rooms-container {
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+
+        .room-item {
+            padding: 10px;
+            margin-bottom: 10px;
+            background-color: #f2f2f2;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+
+        .room-item:hover {
+            background-color: #e6e6e6;
+        }
+
+        .room-form {
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 1px solid #ccc;
+        }
+
+        input,
+        button {
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+
+        button {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+            padding: 10px 15px;
+        }
+
+        button:hover {
+            background-color: #45a049;
+        }
+
+        .room-link {
+            text-decoration: none;
+            color: #333;
+            display: block;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Chat Rooms</h1>
+
+    <div class="rooms-container">
+        <h2>Available Rooms</h2>
+        {% if rooms %}
+        {% for room in rooms %}
+        <div class="room-item">
+            <a href="{{ url_for('room', room_id=room.id) }}" class="room-link">
+                <strong>{{ room.name }}</strong>
+                <small>({{ room.created_at }})</small>
+            </a>
+        </div>
+        {% endfor %}
+        {% else %}
+        <p>No rooms available. Create one below!</p>
+        {% endif %}
+    </div>
+
+    <div class="room-form">
+        <h2>Create New Room</h2>
+        <form action="{{ url_for('create_room_route') }}" method="post">
+            <input type="text" name="room_name" placeholder="Room name" required>
+            <button type="submit">Create Room</button>
+        </form>
+    </div>
+</body>
+
+</html>
