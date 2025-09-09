@@ -1,0 +1,45 @@
+# Pod with explicit resize policies for testing in-place resizing
+# CPU can be resized without restart, memory requires container restart
+apiVersion: v1
+kind: Pod
+metadata:
+  name: resize-test
+  namespace: default
+  labels:
+    app: resize-test
+    test: in-place-resize
+spec:
+  containers:
+  - name: test-container
+    image: registry.k8s.io/pause:3.8
+    # Explicit resize policies - critical for predictable behavior
+    resizePolicy:
+    # CPU resize without restart
+    - resourceName: cpu
+      restartPolicy: NotRequired
+    # Memory resize requires restart
+    - resourceName: memory
+      restartPolicy: RestartContainer
+    resources:
+      requests:
+        # Start small for testing increases
+        cpu: "100m"
+        memory: "64Mi"
+      limits:
+        # 2x request, allows for testing limit changes
+        cpu: "200m"
+        memory: "128Mi"
+  restartPolicy: Always
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: resize-test-svc
+  namespace: default
+spec:
+  selector:
+    app: resize-test
+  ports:
+  - port: 80
+    targetPort: 8080
+  type: ClusterIP
