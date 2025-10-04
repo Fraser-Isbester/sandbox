@@ -1,4 +1,4 @@
-module github.com/Fraser-Isbester/sandbox/consensus
+module github.com/fraser/consensus
 
 go 1.25.1
 

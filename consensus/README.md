@@ -1,73 +1,204 @@
-# Distributed Consensus Demo
+# Consensus
 
-Basic distributed consensus in Go for Kubernetes. Only one pod prints "Doing Work..." while others print "Standing by...". When the working pod is killed, another takes over.
+A Go package for distributed leader election across N processes using pluggable storage backends.
 
-## Prerequisites
+## Features
 
-- Docker
-- kind cluster
-- kubectl
+- **Pluggable backends**: Kubernetes Lease API, file-based (local testing)
+- **Simple API**: Start election with a few lines of code
+- **Thread-safe**: Safe for concurrent use
+- **Graceful shutdown**: Automatic leadership release on context cancellation
 
-## Setup Kind Cluster
-
-```bash
-# Create kind cluster (or use existing one)
-kind create cluster --name test
-
-# Verify cluster
-kubectl cluster-info
-```
-
-## Deploy and Test
+## Installation
 
 ```bash
-# Build and deploy (uses cluster named "test" by default)
-make build
-make deploy
-
-# Watch the consensus in action
-make logs
+go get github.com/fraser/consensus
 ```
 
-To use a different cluster name:
+## Backends
+
+### Kubernetes Lease Backend
+
+Production-ready backend using Kubernetes Lease objects for leader election in cluster environments.
+
+```go
+import (
+    "github.com/fraser/consensus/pkg/consensus"
+    "github.com/fraser/consensus/pkg/consensus/backends/lease"
+)
+
+backend := lease.NewBackend(clientset, "default", "my-app-leader", 15*time.Second)
+manager := consensus.NewManager(backend, consensus.NewConfig(podName))
+```
+
+**Required RBAC:**
+```yaml
+apiGroups: ["coordination.k8s.io"]
+resources: ["leases"]
+verbs: ["get", "create", "update"]
+```
+
+### File Backend
+
+File-based backend for local development and testing. Uses file locking for atomic operations.
+
+```go
+import (
+    "github.com/fraser/consensus/pkg/consensus"
+    "github.com/fraser/consensus/pkg/consensus/backends/file"
+)
+
+backend := file.NewBackend("/tmp/leader.json", 15*time.Second)
+manager := consensus.NewManager(backend, consensus.NewConfig("instance-1"))
+```
+
+## Usage
+
+### Basic Pattern
+
+```go
+package main
+
+import (
+    "context"
+    "log"
+    "time"
+
+    "github.com/fraser/consensus/pkg/consensus"
+    "github.com/fraser/consensus/pkg/consensus/backends/file"
+)
+
+func main() {
+    backend := file.NewBackend("/tmp/leader.json", 15*time.Second)
+    manager := consensus.NewManager(backend, consensus.NewConfig("instance-1"))
+
+    ctx := context.Background()
+    lease := manager.Start(ctx)
+    defer manager.Stop()
+
+    for {
+        if !lease.IsLeader() {
+            log.Println("Waiting to become leader...")
+            time.Sleep(2 * time.Second)
+            continue
+        }
+
+        log.Println("I am the leader!")
+        doWork()
+        time.Sleep(5 * time.Second)
+    }
+}
+
+func doWork() {
+    // Your work here
+}
+```
+
+### Wait-Based Pattern
+
+```go
+for {
+    if err := lease.WaitForLeadership(ctx); err != nil {
+        return err
+    }
+
+    for lease.IsLeader() {
+        doWork()
+        time.Sleep(2 * time.Second)
+    }
+}
+```
+
+## Configuration
+
+### Default Configuration
+
+```go
+config := consensus.NewConfig("my-identity")
+// Defaults:
+// - LeaseDuration: 15s
+// - RenewInterval: 5s
+// - RetryInterval: 2s
+```
+
+### Custom Configuration
+
+```go
+config := consensus.Config{
+    Identity:      "my-identity",
+    LeaseDuration: 30 * time.Second,
+    RenewInterval: 10 * time.Second,
+    RetryInterval: 5 * time.Second,
+}
+```
+
+## Testing in Kubernetes
+
+### Build and Deploy
+
 ```bash
-make build CLUSTER_NAME=your-cluster-name
+# Build Docker image
+docker build -t consensus:latest .
+
+# Load into Kind cluster (if using Kind)
+kind load docker-image consensus:latest
+
+# Deploy to Kubernetes
+kubectl apply -f k8s/deployment.yaml
+
+# Watch the logs
+kubectl logs -f -l app=consensus --all-containers=true
 ```
 
-You should see output like:
-```
-[pod/consensus-deployment-xxx] Doing Work...
-[pod/consensus-deployment-yyy] Standing by...
-[pod/consensus-deployment-zzz] Standing by...
-```
+You should see leader election in action with only one pod claiming leadership at a time.
 
-## Test Failover
+### Local Testing
 
-In another terminal, kill the working pod:
+Run multiple instances locally using the file backend:
 
 ```bash
-# Find the working pod
-kubectl get pods -l app=consensus
+# Terminal 1
+INSTANCE_ID=instance-1 go run examples/local/main.go
 
-# Delete it
-kubectl delete pod <working-pod-name>
+# Terminal 2
+INSTANCE_ID=instance-2 go run examples/local/main.go
 
-# Watch logs to see another pod take over
+# Terminal 3
+INSTANCE_ID=instance-3 go run examples/local/main.go
 ```
 
-## Cleanup
-
-```bash
-# Remove deployment
-make clean
-
-# Delete kind cluster
-kind delete cluster --name consensus-demo
-```
+Only one instance will claim leadership. Kill the leader to see automatic failover.
 
 ## How It Works
 
-- Uses Kubernetes ConfigMap for leader election
-- Leader renews lease every 5 seconds
-- If leader fails to renew within 10 seconds, others can take over
-- Minimal dependencies (only Kubernetes client-go)
+1. **Leader**: Periodically renews lease using `RenewInterval`
+2. **Non-leader**: Periodically attempts to acquire leadership using `RetryInterval`
+3. **Expiry**: If leader fails to renew within `LeaseDuration`, lease expires and others can acquire
+4. **Fault tolerance**: Transient renewal failures are tolerated; consecutive failures demote the leader
+
+## API Reference
+
+### Manager
+
+- `NewManager(backend Backend, config Config) *Manager` - Create new manager
+- `Start(ctx context.Context) *Lease` - Start leader election
+- `Stop() error` - Stop election and release leadership
+
+### Lease
+
+- `IsLeader() bool` - Check leadership status (non-blocking)
+- `WaitForLeadership(ctx context.Context) error` - Block until becoming leader
+
+### Backend Interface
+
+```go
+type Backend interface {
+    TryAcquire(ctx context.Context, identity string) (bool, error)
+    Renew(ctx context.Context, identity string) error
+    Release(ctx context.Context, identity string) error
+}
+```
+
+## License
+
+MIT
