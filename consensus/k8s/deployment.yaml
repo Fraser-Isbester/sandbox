@@ -1,0 +1,90 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: consensus
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: consensus
+  namespace: consensus
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: consensus
+rules:
+- apiGroups: [""]
+  resources: ["configmaps"]
+  verbs: ["get", "list", "create", "update", "patch", "watch"]
+  resourceNames: ["consensus-leader"]
+- apiGroups: [""]
+  resources: ["configmaps"]
+  verbs: ["get", "list", "create", "update", "patch", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: consensus
+  namespace: consensus
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: consensus
+subjects:
+- kind: ServiceAccount
+  name: consensus
+  namespace: consensus
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: consensus
+  namespace: consensus
+  labels:
+    app: consensus
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: consensus
+  template:
+    metadata:
+      labels:
+        app: consensus
+    spec:
+      serviceAccountName: consensus
+      containers:
+      - name: consensus
+        image: consensus:latest
+        imagePullPolicy: Never
+        env:
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "50m"
+          limits:
+            memory: "128Mi"
+            cpu: "100m"
+        # Add a readiness probe to ensure the pod is ready
+        readinessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - "ps aux | grep -v grep | grep consensus"
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        # Add a liveness probe to restart unhealthy pods
+        livenessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - "ps aux | grep -v grep | grep consensus"
+          initialDelaySeconds: 15
+          periodSeconds: 20
