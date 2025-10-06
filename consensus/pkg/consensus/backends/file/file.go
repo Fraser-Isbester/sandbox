@@ -11,26 +11,25 @@ import (
 
 // leaseData represents the JSON structure stored in the lease file.
 type leaseData struct {
-	Holder    string    `json:"holder"`
-	RenewTime time.Time `json:"renewTime"`
+	Holder        string        `json:"holder"`
+	RenewTime     time.Time     `json:"renewTime"`
+	LeaseDuration time.Duration `json:"leaseDuration"`
 }
 
 // Backend implements consensus.Backend using a file-based lock.
 type Backend struct {
 	path string
-	ttl  time.Duration
 }
 
 // NewBackend creates a new file-based backend.
-func NewBackend(path string, ttl time.Duration) *Backend {
+func NewBackend(path string) *Backend {
 	return &Backend{
 		path: path,
-		ttl:  ttl,
 	}
 }
 
 // TryAcquire attempts to acquire or renew leadership.
-func (b *Backend) TryAcquire(ctx context.Context, identity string) (bool, error) {
+func (b *Backend) TryAcquire(ctx context.Context, identity string, leaseDuration time.Duration) (bool, error) {
 	return b.withLock(func(file *os.File) (bool, error) {
 		data, err := b.readLease(file)
 		if err != nil {
@@ -42,6 +41,7 @@ func (b *Backend) TryAcquire(ctx context.Context, identity string) (bool, error)
 		// If we're already the holder, renew
 		if data.Holder == identity {
 			data.RenewTime = now
+			data.LeaseDuration = leaseDuration
 			if err := b.writeLease(file, data); err != nil {
 				return false, err
 			}
@@ -49,9 +49,10 @@ func (b *Backend) TryAcquire(ctx context.Context, identity string) (bool, error)
 		}
 
 		// If no holder or lease expired, acquire
-		if data.Holder == "" || now.Sub(data.RenewTime) > b.ttl {
+		if data.Holder == "" || now.Sub(data.RenewTime) > data.LeaseDuration {
 			data.Holder = identity
 			data.RenewTime = now
+			data.LeaseDuration = leaseDuration
 			if err := b.writeLease(file, data); err != nil {
 				return false, err
 			}
@@ -64,7 +65,7 @@ func (b *Backend) TryAcquire(ctx context.Context, identity string) (bool, error)
 }
 
 // Renew extends the current leader's lease.
-func (b *Backend) Renew(ctx context.Context, identity string) error {
+func (b *Backend) Renew(ctx context.Context, identity string, leaseDuration time.Duration) error {
 	acquired, err := b.withLock(func(file *os.File) (bool, error) {
 		data, err := b.readLease(file)
 		if err != nil {
@@ -76,8 +77,9 @@ func (b *Backend) Renew(ctx context.Context, identity string) error {
 			return false, fmt.Errorf("not the lease holder")
 		}
 
-		// Update renewal time
+		// Update renewal time and duration
 		data.RenewTime = time.Now()
+		data.LeaseDuration = leaseDuration
 		if err := b.writeLease(file, data); err != nil {
 			return false, err
 		}

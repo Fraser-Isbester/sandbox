@@ -20,8 +20,8 @@ type Config struct {
 func NewConfig(identity string) Config {
 	return Config{
 		Identity:      identity,
-		LeaseDuration: 10 * time.Second,
-		RenewInterval: 5 * time.Second,
+		LeaseDuration: 5 * time.Second,
+		RenewInterval: 3 * time.Second,
 		RetryInterval: 2 * time.Second,
 	}
 }
@@ -104,7 +104,7 @@ func (m *Manager) run(ctx context.Context) {
 func (m *Manager) tick(ctx context.Context) {
 	if m.lease.IsLeader() {
 		// We're the leader - try to renew
-		err := m.backend.Renew(ctx, m.config.Identity)
+		err := m.backend.Renew(ctx, m.config.Identity, m.config.LeaseDuration)
 		if err != nil {
 			m.renewFailures++
 			// Allow transient failures, but demote after consecutive failures
@@ -116,7 +116,7 @@ func (m *Manager) tick(ctx context.Context) {
 		}
 	} else {
 		// We're not the leader - try to acquire
-		acquired, err := m.backend.TryAcquire(ctx, m.config.Identity)
+		acquired, err := m.backend.TryAcquire(ctx, m.config.Identity, m.config.LeaseDuration)
 		if err == nil && acquired {
 			m.gainLeadership()
 		}

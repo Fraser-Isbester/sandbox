@@ -23,7 +23,7 @@ func main() {
 
 	// Create file backend in /tmp
 	leasePath := "/tmp/consensus-lease.json"
-	backend := file.NewBackend(leasePath, 15*time.Second)
+	backend := file.NewBackend(leasePath)
 
 	// Create manager with default config
 	manager := consensus.NewManager(backend, consensus.NewConfig(identity))

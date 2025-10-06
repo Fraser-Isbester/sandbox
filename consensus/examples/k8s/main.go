@@ -11,8 +11,6 @@ import (
 
 	"github.com/fraser/consensus/pkg/consensus"
 	"github.com/fraser/consensus/pkg/consensus/backends/lease"
-	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/rest"
 )
 
 func main() {
@@ -22,24 +20,11 @@ func main() {
 		log.Fatal("POD_NAME environment variable must be set")
 	}
 
-	namespace := os.Getenv("POD_NAMESPACE")
-	if namespace == "" {
-		namespace = "default"
-	}
-
-	// Create Kubernetes client (in-cluster config)
-	config, err := rest.InClusterConfig()
+	// Create lease backend using environment config
+	backend, err := lease.NewFromEnv("consensus-worker-leader")
 	if err != nil {
-		log.Fatalf("Failed to get in-cluster config: %v", err)
+		log.Fatalf("Failed to create backend: %v", err)
 	}
-
-	clientset, err := kubernetes.NewForConfig(config)
-	if err != nil {
-		log.Fatalf("Failed to create Kubernetes client: %v", err)
-	}
-
-	// Create lease backend
-	backend := lease.NewBackend(clientset, namespace, "consensus-worker-leader", 10*time.Second)
 
 	// Create manager with default config
 	manager := consensus.NewManager(backend, consensus.NewConfig(podName))

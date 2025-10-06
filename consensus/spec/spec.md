@@ -22,12 +22,14 @@ pkg/consensus/
 // Backend abstracts the storage mechanism for leader election
 type Backend interface {
     // TryAcquire attempts to acquire or renew leadership
+    // leaseDuration specifies how long the lease is valid before expiring
     // Returns true if leadership was acquired/renewed, false if another leader holds it
-    TryAcquire(ctx context.Context, identity string) (bool, error)
+    TryAcquire(ctx context.Context, identity string, leaseDuration time.Duration) (bool, error)
 
     // Renew extends the current leader's lease
+    // leaseDuration specifies how long the lease is valid before expiring
     // Returns error if we're no longer the leader
-    Renew(ctx context.Context, identity string) error
+    Renew(ctx context.Context, identity string, leaseDuration time.Duration) error
 
     // Release explicitly gives up leadership
     Release(ctx context.Context, identity string) error
@@ -105,26 +107,33 @@ type Backend struct {
     client    kubernetes.Interface
     namespace string
     name      string
-    ttl       time.Duration
 }
 
-func NewBackend(client kubernetes.Interface, namespace, name string, ttl time.Duration) *Backend
+func NewBackend(client kubernetes.Interface, namespace, name string) *Backend
+
+// NewFromEnv creates a Lease backend using in-cluster Kubernetes config
+// leaseName: name of the Lease object to use for coordination
+// Environment variables:
+//   POD_NAMESPACE - namespace for lease object (default: "default")
+func NewFromEnv(leaseName string) (*Backend, error)
 ```
 
 **TryAcquire logic:**
-1. GET lease object
-2. If NotFound: CREATE with current identity as holder
-3. If exists:
-   - If we're already the holder: UPDATE renewTime to now, return true
-   - If different holder: check if `now - renewTime > ttl`
-     - Expired: UPDATE to our identity, return true
+1. Accept `leaseDuration` parameter from Manager
+2. GET lease object
+3. If NotFound: CREATE with current identity as holder, write leaseDurationSeconds
+4. If exists:
+   - If we're already the holder: UPDATE renewTime and leaseDurationSeconds, return true
+   - If different holder: check if `now - renewTime > leaseDurationSeconds`
+     - Expired: UPDATE to our identity, write leaseDurationSeconds, return true
      - Valid: return false (can't acquire)
-4. Handle conflict errors (retry in Manager loop)
+5. Handle conflict errors (retry in Manager loop)
 
 **Renew logic:**
-1. GET lease object
-2. Verify `holderIdentity == our identity`, else return error
-3. UPDATE renewTime to now
+1. Accept `leaseDuration` parameter from Manager
+2. GET lease object
+3. Verify `holderIdentity == our identity`, else return error
+4. UPDATE renewTime and leaseDurationSeconds
 
 **Release logic:**
 1. GET lease object
@@ -143,34 +152,37 @@ func NewBackend(client kubernetes.Interface, namespace, name string, ttl time.Du
 ```go
 type Backend struct {
     path string
-    ttl  time.Duration
 }
 
-func NewBackend(path string, ttl time.Duration) *Backend
+func NewBackend(path string) *Backend
 ```
 
 **Implementation:**
-- Uses a file with JSON content: `{"holder": "identity", "renewTime": "RFC3339"}`
+- Uses a file with JSON content: `{"holder": "identity", "renewTime": "RFC3339", "leaseDuration": "10s"}`
 - File locking (flock/syscall) for atomic read-modify-write operations
-- TryAcquire: read file, check expiry, write if can acquire
-- Renew: read file, verify holder, update renewTime
-- Release: read file, verify holder, clear holder field
+- TryAcquire: accepts leaseDuration, reads file, checks expiry using stored leaseDuration, writes if can acquire
+- Renew: accepts leaseDuration, reads file, verifies holder, updates renewTime and leaseDuration
+- Release: reads file, verifies holder, clears holder field
 
 **Thread safety:** File locking ensures atomicity across processes
 
 ## Usage Examples
 
-### Basic Leader Election
+### Basic Leader Election (K8s with NewFromEnv)
 ```go
-backend := lease.NewBackend(clientset, "default", "my-app-leader", 5*time.Second)
+// Create backend from environment (reads POD_NAMESPACE)
+backend, err := lease.NewFromEnv("my-app-leader")
+if err != nil {
+    log.Fatal(err)
+}
 
 manager := consensus.NewManager(backend, consensus.NewConfig(os.Getenv("POD_NAME")))
 
 // Or explicit config:
 // manager := consensus.NewManager(backend, consensus.Config{
 //     Identity:      os.Getenv("POD_NAME"),
-//     LeaseDuration: 5 * time.Second,
-//     RenewInterval: 1 * time.Second,
+//     LeaseDuration: 15 * time.Second,
+//     RenewInterval: 5 * time.Second,
 //     RetryInterval: 2 * time.Second,
 // })
 

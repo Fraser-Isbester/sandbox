@@ -2,13 +2,23 @@ package lease
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os"
 	"time"
 
 	coordinationv1 "k8s.io/api/coordination/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
+)
+
+var (
+	// ErrK8sConnection indicates failure to connect to Kubernetes
+	ErrK8sConnection = errors.New("failed to connect to kubernetes")
+	// ErrInvalidConfig indicates invalid configuration
+	ErrInvalidConfig = errors.New("invalid configuration")
 )
 
 // Backend implements consensus.Backend using Kubernetes Lease objects.
@@ -16,21 +26,47 @@ type Backend struct {
 	client    kubernetes.Interface
 	namespace string
 	name      string
-	ttl       time.Duration
 }
 
 // NewBackend creates a new Kubernetes Lease backend.
-func NewBackend(client kubernetes.Interface, namespace, name string, ttl time.Duration) *Backend {
+func NewBackend(client kubernetes.Interface, namespace, name string) *Backend {
 	return &Backend{
 		client:    client,
 		namespace: namespace,
 		name:      name,
-		ttl:       ttl,
 	}
 }
 
+// NewFromEnv creates a Lease backend using in-cluster Kubernetes config.
+// leaseName: name of the Lease object to use for coordination
+// Environment variables:
+//
+//	POD_NAMESPACE - namespace for lease object (default: "default")
+func NewFromEnv(leaseName string) (*Backend, error) {
+	if leaseName == "" {
+		return nil, fmt.Errorf("%w: leaseName cannot be empty", ErrInvalidConfig)
+	}
+
+	namespace := os.Getenv("POD_NAMESPACE")
+	if namespace == "" {
+		namespace = "default"
+	}
+
+	config, err := rest.InClusterConfig()
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrK8sConnection, err)
+	}
+
+	clientset, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		return nil, fmt.Errorf("%w: failed to create clientset: %v", ErrK8sConnection, err)
+	}
+
+	return NewBackend(clientset, namespace, leaseName), nil
+}
+
 // TryAcquire attempts to acquire or renew leadership.
-func (b *Backend) TryAcquire(ctx context.Context, identity string) (bool, error) {
+func (b *Backend) TryAcquire(ctx context.Context, identity string, leaseDuration time.Duration) (bool, error) {
 	leaseClient := b.client.CoordinationV1().Leases(b.namespace)
 
 	lease, err := leaseClient.Get(ctx, b.name, metav1.GetOptions{})
@@ -47,7 +83,7 @@ func (b *Backend) TryAcquire(ctx context.Context, identity string) (bool, error)
 			},
 			Spec: coordinationv1.LeaseSpec{
 				HolderIdentity:       &identity,
-				LeaseDurationSeconds: ptr(int32(b.ttl.Seconds())),
+				LeaseDurationSeconds: ptr(int32(leaseDuration.Seconds())),
 				AcquireTime:          &metav1.MicroTime{Time: time.Now()},
 				RenewTime:            &metav1.MicroTime{Time: time.Now()},
 			},
@@ -71,6 +107,7 @@ func (b *Backend) TryAcquire(ctx context.Context, identity string) (bool, error)
 	// If we're already the holder, renew it
 	if lease.Spec.HolderIdentity != nil && *lease.Spec.HolderIdentity == identity {
 		lease.Spec.RenewTime = &metav1.MicroTime{Time: now}
+		lease.Spec.LeaseDurationSeconds = ptr(int32(leaseDuration.Seconds()))
 		_, err = leaseClient.Update(ctx, lease, metav1.UpdateOptions{})
 		if err != nil {
 			return false, fmt.Errorf("failed to renew lease: %w", err)
@@ -79,9 +116,10 @@ func (b *Backend) TryAcquire(ctx context.Context, identity string) (bool, error)
 	}
 
 	// Different holder - check if lease has expired
-	if lease.Spec.RenewTime != nil {
+	if lease.Spec.RenewTime != nil && lease.Spec.LeaseDurationSeconds != nil {
 		elapsed := now.Sub(lease.Spec.RenewTime.Time)
-		if elapsed < b.ttl {
+		ttl := time.Duration(*lease.Spec.LeaseDurationSeconds) * time.Second
+		if elapsed < ttl {
 			// Lease is still valid
 			return false, nil
 		}
@@ -91,6 +129,7 @@ func (b *Backend) TryAcquire(ctx context.Context, identity string) (bool, error)
 	lease.Spec.HolderIdentity = &identity
 	lease.Spec.AcquireTime = &metav1.MicroTime{Time: now}
 	lease.Spec.RenewTime = &metav1.MicroTime{Time: now}
+	lease.Spec.LeaseDurationSeconds = ptr(int32(leaseDuration.Seconds()))
 
 	_, err = leaseClient.Update(ctx, lease, metav1.UpdateOptions{})
 	if err != nil {
@@ -105,7 +144,7 @@ func (b *Backend) TryAcquire(ctx context.Context, identity string) (bool, error)
 }
 
 // Renew extends the current leader's lease.
-func (b *Backend) Renew(ctx context.Context, identity string) error {
+func (b *Backend) Renew(ctx context.Context, identity string, leaseDuration time.Duration) error {
 	leaseClient := b.client.CoordinationV1().Leases(b.namespace)
 
 	lease, err := leaseClient.Get(ctx, b.name, metav1.GetOptions{})
@@ -118,8 +157,9 @@ func (b *Backend) Renew(ctx context.Context, identity string) error {
 		return fmt.Errorf("not the lease holder")
 	}
 
-	// Update renewal time
+	// Update renewal time and duration
 	lease.Spec.RenewTime = &metav1.MicroTime{Time: time.Now()}
+	lease.Spec.LeaseDurationSeconds = ptr(int32(leaseDuration.Seconds()))
 
 	_, err = leaseClient.Update(ctx, lease, metav1.UpdateOptions{})
 	if err != nil {
