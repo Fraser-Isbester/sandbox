@@ -1,0 +1,32 @@
+{
+  "github": {
+    "token": "ghp_your_github_personal_access_token",
+    "webhook_secret": "your_github_webhook_secret"
+  },
+  "jira": {
+    "url": "https://your-domain.atlassian.net",
+    "username": "your-email@example.com",
+    "api_token": "your_jira_api_token",
+    "webhook_secret": "your_jira_webhook_secret"
+  },
+  "sync": {
+    "mappings": [
+      {
+        "jira_project": "PROJ",
+        "github_repo": "my-repo",
+        "github_owner": "my-org",
+        "sync_labels": ["jira-synced", "managed"]
+      },
+      {
+        "jira_project": "CORE",
+        "github_repo": "core-repo",
+        "github_owner": "my-org",
+        "sync_labels": ["jira-synced"]
+      }
+    ]
+  },
+  "server": {
+    "port": 8080,
+    "host": "0.0.0.0"
+  }
+}
