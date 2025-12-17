@@ -1,0 +1,12 @@
+apiVersion: isbester.com/v1alpha1
+kind: BasicApplication
+metadata:
+  name: test-app
+  namespace: default
+spec:
+  name: test-app
+  image: nginx:alpine
+  replicas: 2
+  env:
+    - key: FOO
+      value: bar

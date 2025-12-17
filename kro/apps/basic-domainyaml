@@ -1,0 +1,10 @@
+apiVersion: isbester.com/v1alpha1
+kind: BasicDomain
+spec:
+  database:
+    name: basic-db
+  service:
+    name: basic-app
+  pubsubWorkers:
+    - name: basic-pubsub-worker
+

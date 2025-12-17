@@ -1,0 +1,12 @@
+apiVersion: isbester.com/v1alpha1
+kind: BasicApplication
+metadata:
+  name: basic-app-v0
+spec:
+  name: basic-app-v0
+  ingress:
+    enabled: true
+  autoscaling:
+    enabled: true
+  env:
+    TEST_ENV_VAR: value-v2
