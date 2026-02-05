@@ -1,0 +1,93 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pubsub-scheduler-worker
+  labels:
+    app: pubsub-scheduler-worker
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: pubsub-scheduler-worker
+  template:
+    metadata:
+      labels:
+        app: pubsub-scheduler-worker
+    spec:
+      containers:
+      - name: worker
+        image: gcr.io/your-project/pubsub-scheduler-worker:latest
+        env:
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: postgres-creds
+              key: url
+        - name: PUBSUB_PROJECT_ID
+          value: "your-gcp-project"
+        - name: WORKER_ID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: pubsub-scheduler-worker-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: pubsub-scheduler-worker
+  minReplicas: 3
+  maxReplicas: 50
+  metrics:
+  - type: External
+    external:
+      metric:
+        name: custom.googleapis.com|scheduler|pending_messages
+      target:
+        type: AverageValue
+        averageValue: "1000"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pubsub-scheduler-processor
+  labels:
+    app: pubsub-scheduler-processor
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pubsub-scheduler-processor
+  template:
+    metadata:
+      labels:
+        app: pubsub-scheduler-processor
+    spec:
+      containers:
+      - name: processor
+        image: gcr.io/your-project/pubsub-scheduler-processor:latest
+        env:
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: postgres-creds
+              key: url
+        - name: PUBSUB_PROJECT_ID
+          value: "your-gcp-project"
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 200m
+            memory: 256Mi
